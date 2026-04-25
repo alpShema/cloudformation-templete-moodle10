@@ -1,0 +1,1 @@
+# cloudformation-templete-moodle10
