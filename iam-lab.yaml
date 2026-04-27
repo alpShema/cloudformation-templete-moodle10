@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  IAM Automation Lab - Creates IAM Users, Groups, Policies, and a shared
+  temporary password stored in Secrets Manager. Designed for GitSync deployment.
+
+
+# PARAMETERS — values you can override at deploy time
+
+Parameters:
+  PasswordLength:
+    Type: Number
+    Default: 16
+    Description: Length of the auto-generated temporary password
+
+
+# RESOURCES
+
+Resources:
+
+
+  # 1. SECRETS MANAGER — Auto-generated one-time password
+  #    All three IAM users will share this temporary password.
+  #    Users are forced to change it on first login.
+ 
+  IAMTemporaryPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: iam-lab/temporary-password
+      Description: Auto-generated temporary password for IAM lab users
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "lab-users"}'
+        GenerateStringKey: password
+        PasswordLength: !Ref PasswordLength
+        # AWS Console passwords need uppercase, lowercase, digits, symbols
+        ExcludeCharacters: '"@/\\'
+      Tags:
+        - Key: Lab
+          Value: IAM-Automation
+
+
+  # 2. S3 GROUP POLICY — Allows listing S3 buckets only
+  #    s3:ListAllMyBuckets → see all buckets
+  #    s3:GetBucketLocation → required companion permission
+  #    s3:ListBucket → list objects inside a bucket
+
+  S3GroupPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: iam-lab-s3-group-policy
+      Description: Allows users to list S3 buckets
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowListS3Buckets
+            Effect: Allow
+            Action:
+              - s3:ListAllMyBuckets
+              - s3:GetBucketLocation
+              - s3:ListBucket
+            Resource: '*'
+
+ 
+  # 3. S3 IAM GROUP — Attach the S3 policy to this group
+  #    s3-user will be a member of this group
+
+  S3UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: iam-lab-s3-group
+      ManagedPolicyArns:
+        - !Ref S3GroupPolicy
+
+  
+  # 4. EC2 BASE GROUP POLICY — Allows listing/describing EC2
+  #    ec2:DescribeInstances → list EC2 instances
+  #    ec2:DescribeInstanceTypes → describe instance types
+  #    NOTE: RunInstances (create) is NOT included here.
+  #    ec2-user1 gets only this policy → cannot create EC2.
+
+  EC2GroupPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: iam-lab-ec2-group-policy
+      Description: Allows users to list and describe EC2 instances
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowDescribeEC2
+            Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeInstanceTypes
+              - ec2:DescribeInstanceStatus
+              - ec2:DescribeRegions
+              - ec2:DescribeAvailabilityZones
+            Resource: '*'
+
+ 
+  # 5. EC2 IAM GROUP — Attach the EC2 base policy
+  #    ec2-user1 AND ec2-user2 are members of this group.
+  #    ec2-user1 only has this → list/describe, no create.
+ 
+  EC2UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: iam-lab-ec2-group
+      ManagedPolicyArns:
+        - !Ref EC2GroupPolicy
+
+  # 6. EC2 CREATE POLICY — Grants EC2 instance creation rights
+  #    This is ONLY attached to ec2-user2 directly (not the group)
+  #    so ec2-user1 does NOT inherit it.
+  #    ec2:RunInstances → launch/create EC2 instances
+  #    iam:PassRole → required when launching with an IAM role
+ 
+  EC2CreatePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: iam-lab-ec2-create-policy
+      Description: Allows creating EC2 instances - assigned only to ec2-user2
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRunEC2Instances
+            Effect: Allow
+            Action:
+              - ec2:RunInstances
+              - ec2:CreateTags
+              - ec2:DescribeKeyPairs
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+              - ec2:DescribeImages
+            Resource: '*'
+
+  # 7. IAM USER: s3-user
+  #    - Console access enabled
+  #    - Password sourced from Secrets Manager (dynamic reference)
+  #    - PasswordResetRequired: true → must change on first login
+  #    - Member of S3UserGroup
+  
+  S3User:
+    Type: AWS::IAM::User
+    DependsOn: IAMTemporaryPassword
+    Properties:
+      UserName: s3-user
+      Groups:
+        - !Ref S3UserGroup
+      LoginProfile:
+        # Dynamic reference pulls the password value from Secrets Manager
+        # Syntax: {{resolve:secretsmanager:SECRET_NAME:SecretString:KEY}}
+        Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
+        PasswordResetRequired: true
+      Tags:
+        - Key: Lab
+          Value: IAM-Automation
+        - Key: Group
+          Value: S3Group
+
+  # 8. IAM USER: ec2-user1
+  #    - Console access enabled
+  #    - Same temporary password from Secrets Manager
+  #    - PasswordResetRequired: true
+  #    - Member of EC2UserGroup ONLY → can list/describe, NOT create
+
+  EC2User1:
+    Type: AWS::IAM::User
+    DependsOn: IAMTemporaryPassword
+    Properties:
+      UserName: ec2-user1
+      Groups:
+        - !Ref EC2UserGroup
+      LoginProfile:
+        Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
+        PasswordResetRequired: true
+      Tags:
+        - Key: Lab
+          Value: IAM-Automation
+        - Key: Group
+          Value: EC2Group
+
+ 
+  # 9. IAM USER: ec2-user2
+  #    - Console access enabled
+  #    - Same temporary password from Secrets Manager
+  #    - PasswordResetRequired: true
+  #    - Member of EC2UserGroup (list/describe)
+  #    - ALSO gets EC2CreatePolicy directly → CAN create EC2
+ 
+  EC2User2:
+    Type: AWS::IAM::User
+    DependsOn: IAMTemporaryPassword
+    Properties:
+      UserName: ec2-user2
+      Groups:
+        - !Ref EC2UserGroup
+      # Attach the create policy directly to this user only
+      ManagedPolicyArns:
+        - !Ref EC2CreatePolicy
+      LoginProfile:
+        Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
+        PasswordResetRequired: true
+      Tags:
+        - Key: Lab
+          Value: IAM-Automation
+        - Key: Group
+          Value: EC2Group
+
+
+# OUTPUTS — values shown after stack deployment
+
+Outputs:
+
+  SecretManagerARN:
+    Description: ARN of the Secrets Manager secret holding the temp password
+    Value: !Ref IAMTemporaryPassword
+    Export:
+      Name: !Sub '${AWS::StackName}-TempPasswordSecretARN'
+
+  SecretManagerConsoleURL:
+    Description: Direct link to view the temporary password in AWS Console
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/secretsmanager/secret?name=iam-lab/temporary-password&region=${AWS::Region}'
+
+  S3UserGroupName:
+    Description: Name of the S3 IAM Group
+    Value: !Ref S3UserGroup
+
+  EC2UserGroupName:
+    Description: Name of the EC2 IAM Group
+    Value: !Ref EC2UserGroup
+
+  UsersCreated:
+    Description: IAM users created by this stack
+    Value: 's3-user (S3Group), ec2-user1 (EC2Group - list only), ec2-user2 (EC2Group + create)'
+
+  PasswordNote:
+    Description: How to retrieve the temporary password
+    Value: >
+      Go to AWS Console > Secrets Manager > iam-lab/temporary-password >
+      Retrieve secret value. All users share this password and must change it on first login.
