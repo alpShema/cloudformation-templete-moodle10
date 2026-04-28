@@ -1,0 +1,24 @@
+# deployment-config.yaml
+
+# CloudFormation GitSync Deployment Configuration
+#
+# This file tells CloudFormation WHERE the template is inside
+# your GitHub repo and WHAT parameters/tags to apply.
+#
+# GitSync watches this file. Any git push to the tracked branch
+# will automatically trigger a CloudFormation stack update.
+
+
+template-file-path: ./iam-lab.yaml
+
+parameters:
+  - parameter-key: PasswordLength
+    parameter-value: "16"
+
+tags:
+  - key: Project
+    value: IAM-Automation-Lab
+  - key: ManagedBy
+    value: CloudFormation-GitSync
+  - key: Environment
+    value: Lab
