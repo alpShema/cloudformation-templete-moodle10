@@ -4,8 +4,6 @@ Description: >
   temporary password stored in Secrets Manager. Designed for GitSync deployment.
 
 
-# PARAMETERS — values you can override at deploy time
-
 Parameters:
   PasswordLength:
     Type: Number
@@ -13,15 +11,9 @@ Parameters:
     Description: Length of the auto-generated temporary password
 
 
-# RESOURCES
-
 Resources:
 
-
-  # 1. SECRETS MANAGER — Auto-generated one-time password
-  #    All three IAM users will share this temporary password.
-  #    Users are forced to change it on first login.
- 
+  # 1. SECRETS MANAGER
   IAMTemporaryPassword:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -31,18 +23,33 @@ Resources:
         SecretStringTemplate: '{"username": "lab-users"}'
         GenerateStringKey: password
         PasswordLength: !Ref PasswordLength
-        # AWS Console passwords need uppercase, lowercase, digits, symbols
         ExcludeCharacters: '"@/\\'
       Tags:
         - Key: Lab
           Value: IAM-Automation
 
 
-  # 2. S3 GROUP POLICY — Allows listing S3 buckets only
-  #    s3:ListAllMyBuckets → see all buckets
-  #    s3:GetBucketLocation → required companion permission
-  #    s3:ListBucket → list objects inside a bucket
+  # 2. SELF PASSWORD POLICY — Allows users to change their own password
+  #    Without this, PasswordResetRequired: true will always fail
+  #    because users have no permission to call iam:ChangePassword
 
+  SelfPasswordPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: iam-lab-self-password-policy
+      Description: Allows IAM users to change their own password on first login
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSelfPasswordChange
+            Effect: Allow
+            Action:
+              - iam:ChangePassword
+              - iam:GetAccountPasswordPolicy
+            Resource: '*'
+
+
+  # 3. S3 GROUP POLICY
   S3GroupPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -59,10 +66,8 @@ Resources:
               - s3:ListBucket
             Resource: '*'
 
- 
-  # 3. S3 IAM GROUP — Attach the S3 policy to this group
-  #    s3-user will be a member of this group
 
+  # 4. S3 IAM GROUP
   S3UserGroup:
     Type: AWS::IAM::Group
     Properties:
@@ -70,13 +75,8 @@ Resources:
       ManagedPolicyArns:
         - !Ref S3GroupPolicy
 
-  
-  # 4. EC2 BASE GROUP POLICY — Allows listing/describing EC2
-  #    ec2:DescribeInstances → list EC2 instances
-  #    ec2:DescribeInstanceTypes → describe instance types
-  #    NOTE: RunInstances (create) is NOT included here.
-  #    ec2-user1 gets only this policy → cannot create EC2.
 
+  # 5. EC2 BASE GROUP POLICY
   EC2GroupPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -95,11 +95,8 @@ Resources:
               - ec2:DescribeAvailabilityZones
             Resource: '*'
 
- 
-  # 5. EC2 IAM GROUP — Attach the EC2 base policy
-  #    ec2-user1 AND ec2-user2 are members of this group.
-  #    ec2-user1 only has this → list/describe, no create.
- 
+
+  # 6. EC2 IAM GROUP
   EC2UserGroup:
     Type: AWS::IAM::Group
     Properties:
@@ -107,12 +104,8 @@ Resources:
       ManagedPolicyArns:
         - !Ref EC2GroupPolicy
 
-  # 6. EC2 CREATE POLICY — Grants EC2 instance creation rights
-  #    This is ONLY attached to ec2-user2 directly (not the group)
-  #    so ec2-user1 does NOT inherit it.
-  #    ec2:RunInstances → launch/create EC2 instances
-  #    iam:PassRole → required when launching with an IAM role
- 
+
+  # 7. EC2 CREATE POLICY — only for ec2-user2
   EC2CreatePolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -133,12 +126,8 @@ Resources:
               - ec2:DescribeImages
             Resource: '*'
 
-  # 7. IAM USER: s3-user
-  #    - Console access enabled
-  #    - Password sourced from Secrets Manager (dynamic reference)
-  #    - PasswordResetRequired: true → must change on first login
-  #    - Member of S3UserGroup
-  
+
+  # 8. IAM USER: s3-user
   S3User:
     Type: AWS::IAM::User
     DependsOn: IAMTemporaryPassword
@@ -146,9 +135,9 @@ Resources:
       UserName: s3-user
       Groups:
         - !Ref S3UserGroup
+      ManagedPolicyArns:
+        - !Ref SelfPasswordPolicy   # ← ADDED: allows password reset on first login
       LoginProfile:
-        # Dynamic reference pulls the password value from Secrets Manager
-        # Syntax: {{resolve:secretsmanager:SECRET_NAME:SecretString:KEY}}
         Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
         PasswordResetRequired: true
       Tags:
@@ -157,12 +146,8 @@ Resources:
         - Key: Group
           Value: S3Group
 
-  # 8. IAM USER: ec2-user1
-  #    - Console access enabled
-  #    - Same temporary password from Secrets Manager
-  #    - PasswordResetRequired: true
-  #    - Member of EC2UserGroup ONLY → can list/describe, NOT create
 
+  # 9. IAM USER: ec2-user1
   EC2User1:
     Type: AWS::IAM::User
     DependsOn: IAMTemporaryPassword
@@ -170,6 +155,8 @@ Resources:
       UserName: ec2-user1
       Groups:
         - !Ref EC2UserGroup
+      ManagedPolicyArns:
+        - !Ref SelfPasswordPolicy   # ← ADDED: allows password reset on first login
       LoginProfile:
         Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
         PasswordResetRequired: true
@@ -179,14 +166,8 @@ Resources:
         - Key: Group
           Value: EC2Group
 
- 
-  # 9. IAM USER: ec2-user2
-  #    - Console access enabled
-  #    - Same temporary password from Secrets Manager
-  #    - PasswordResetRequired: true
-  #    - Member of EC2UserGroup (list/describe)
-  #    - ALSO gets EC2CreatePolicy directly → CAN create EC2
- 
+
+  # 10. IAM USER: ec2-user2
   EC2User2:
     Type: AWS::IAM::User
     DependsOn: IAMTemporaryPassword
@@ -194,9 +175,9 @@ Resources:
       UserName: ec2-user2
       Groups:
         - !Ref EC2UserGroup
-      # Attach the create policy directly to this user only
       ManagedPolicyArns:
         - !Ref EC2CreatePolicy
+        - !Ref SelfPasswordPolicy   # ← ADDED: allows password reset on first login
       LoginProfile:
         Password: !Sub '{{resolve:secretsmanager:iam-lab/temporary-password:SecretString:password}}'
         PasswordResetRequired: true
@@ -206,8 +187,6 @@ Resources:
         - Key: Group
           Value: EC2Group
 
-
-# OUTPUTS — values shown after stack deployment
 
 Outputs:
 
