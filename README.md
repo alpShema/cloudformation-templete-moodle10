@@ -1,4 +1,4 @@
-# IAM Automation Lab — CloudFormation + GitSync
+# IAM Automation Lab  CloudFormation + GitSync
 
 > **Course Lab** | AWS IAM | CloudFormation GitSync Deployment
 
@@ -6,13 +6,13 @@
 
 ## Overview
 
-This lab provisions AWS IAM resources automatically using a CloudFormation template synced from GitHub. Any push to the `main` branch triggers an automatic stack update — no manual deployments needed.
+This lab provisions AWS IAM resources automatically using a CloudFormation template synced from GitHub. Any push to the `main` branch triggers an automatic stack update no manual deployments needed.
 
 ---
 
 ## What This Template Creates
 
-### 1. Secrets Manager — One-Time Password
+### 1. Secrets Manager  One-Time Password
 - Auto-generated secure password stored at `iam-lab/temporary-password`
 - Shared across all three IAM users
 - All users are forced to change it on first login
@@ -53,7 +53,7 @@ cloudformation-template-moodle10/
 
 ---
 
-## GitSync Setup — Step by Step
+## GitSync Setup  Step by Step
 
 ### Prerequisites
 - AWS Account with root or admin access
@@ -90,14 +90,14 @@ cloudformation-template-moodle10/
 }
 ```
 
-### Step 2 — Create the Stack
+### Step 2  Create the Stack
 
 1. Go to **CloudFormation → Stacks → Create stack**
 2. Select **"Choose an existing template"**
 3. Select **"Sync from Git"**
 4. Click **Next**
 
-### Step 3 — Specify Stack Details
+### Step 3  Specify Stack Details
 
 | Field | Value |
 |---|---|
@@ -110,7 +110,7 @@ cloudformation-template-moodle10/
 | Deployment file path | `deployment-config.yaml` |
 | IAM role | `iam-lab1-role` |
 
-### Step 4 — Configure Stack Options
+### Step 4  Configure Stack Options
 
 - Under **Permissions → IAM role** → click **Remove** (leave blank)
 - Leave all other settings as default
@@ -156,13 +156,13 @@ Stack updates automatically ✅
 
 ## Testing the Lab (Task 2)
 
-### Step 1 — Get the Temporary Password
+### Step 1  Get the Temporary Password
 
 1. Go to **Secrets Manager → iam-lab/temporary-password**
 2. Click **Retrieve secret value**
 3. Copy the password
 
-### Step 2 — Get Your Console Login URL
+### Step 2  Get Your Console Login URL
 
 ```
 https://<YOUR_ACCOUNT_ID>.signin.aws.amazon.com/console
@@ -170,7 +170,7 @@ https://<YOUR_ACCOUNT_ID>.signin.aws.amazon.com/console
 
 Find your Account ID in the top-right corner of the AWS Console.
 
-### Step 3 — Login & Test Each User
+### Step 3  Login & Test Each User
 
 Open an **Incognito window** for each user so your root session stays active.
 
@@ -194,7 +194,7 @@ Open an **Incognito window** for each user so your root session stays active.
 | EC2 → List instances | ✅ Success |
 | EC2 → Launch instance | ✅ Success |
 
-### Step 4 — Test GitSync Auto-Update
+### Step 4  Test GitSync Auto-Update
 
 1. Open `iam-lab.yaml` in GitHub
 2. Change the password length parameter from `16` to `20`
