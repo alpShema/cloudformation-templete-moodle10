@@ -204,19 +204,6 @@ Open an **Incognito window** for each user so your root session stays active.
 
 ---
 
-## Deliverables Checklist
-
-- [ ] GitHub repo link shared
-- [ ] Stack status: `CREATE_COMPLETE`
-- [ ] Screenshot: `s3-user` accessing S3 (success)
-- [ ] Screenshot: `s3-user` accessing EC2 (denied)
-- [ ] Screenshot: `ec2-user1` accessing EC2 (success)
-- [ ] Screenshot: `ec2-user1` launching EC2 (denied)
-- [ ] Screenshot: `ec2-user2` accessing EC2 (success)
-- [ ] Screenshot: `ec2-user2` launching EC2 (success)
-- [ ] GitSync auto-update verified
-
----
 
 ## Troubleshooting
 
